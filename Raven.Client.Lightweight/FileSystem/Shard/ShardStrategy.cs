@@ -22,6 +22,34 @@ namespace Raven.Client.FileSystem.Shard
 			if (shards.Count == 0)
 				throw new ArgumentException("Shards collection must have at least one item", "shards");
 
+            var shardsDicToList = shards.Select((x) => new
+            {
+                Id = x.Value.GetServerIdAsync(),
+                Key = x.Key,
+                Url = x.Value.UrlFor(),
+
+            }).ToList();
+
+
+            shardsDicToList.ForEach(x =>
+            {
+                try { x.Id.Wait(); }
+                // If server is down we don't want it to stop us
+                // from going, so catch it.
+                catch { }
+            });
+
+
+            var multiKeysUrl = shardsDicToList.Where(x => x.Id.Status == TaskStatus.RanToCompletion).GroupBy(x => new
+            {
+                ID = x.Id.Result,
+                x.Url
+            }, x => x.Key)
+            .Where(x => x.Count() > 1).Select(x => x.Key.Url).FirstOrDefault();
+
+            if (multiKeysUrl != null)
+                throw new NotSupportedException(string.Format("Multiple keys in shard dictionary for {0} are not supported.", multiKeysUrl));
+
             this.shards = new Dictionary<string, IAsyncFilesCommands>(shards, StringComparer.OrdinalIgnoreCase);
 
 
